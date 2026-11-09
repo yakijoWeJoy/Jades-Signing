@@ -1,0 +1,220 @@
+﻿<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JAdES Signing Demo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>הדגמת חתימת JAdES</h1>
+  <p class="lead">יוצרים קובץ חתום, בודקים קובץ חתום, ומכינים קריאת <code>curl</code> עם כותרת <code dir="ltr">X-JAdES-Signature</code>. הכל רץ בדפדפן הזה; המפתח לא יוצא מהמחשב.</p>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="sign" aria-selected="true">1. חתימה</button>
+    <button role="tab" data-tab="verify" aria-selected="false">2. אימות</button>
+    <button role="tab" data-tab="curl" aria-selected="false">3. שליחה כ-REST</button>
+  </nav>
+</header>
+
+<main>
+<!-- ================= SIGN ================= -->
+<section id="tab-sign" class="tab" role="tabpanel">
+  <div class="grid2">
+    <div class="card">
+      <h2>תוכן (JSON)</h2>
+      <p class="hint">הבתים שנחתמים הם <b>בדיוק</b> הטקסט שבתיבה (UTF-8, סוף שורה LF). שינוי רווחים משנה את החתימה.</p>
+      <textarea id="payload" dir="ltr" spellcheck="false" rows="12">{"declarationId":"IL-2026-000123","importer":"512345678","items":[{"hs":"8471.30","qty":2,"value":1800.50}]}</textarea>
+      <div class="row">
+        <button id="btn-pretty" class="ghost">עיצוב JSON</button>
+        <button id="btn-compact" class="ghost">דחיסת JSON</button>
+        <label class="ghost file">טעינת קובץ JSON<input type="file" id="payload-file" accept=".json,application/json,text/plain"></label>
+        <span id="payload-status" class="status"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>מפתח חתימה</h2>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="keysrc" value="pfx" checked> קובץ PFX</label>
+        <label><input type="radio" name="keysrc" value="card"> כרטיס חכם (USB)</label>
+      </div>
+
+      <div id="src-pfx">
+        <label class="field">קובץ <code>.pfx</code> / <code>.p12</code>
+          <input type="file" id="pfx-file" accept=".pfx,.p12,application/x-pkcs12">
+        </label>
+        <label class="field">סיסמה
+          <input type="password" id="pfx-password" autocomplete="off" dir="ltr">
+        </label>
+        <button id="btn-load-pfx">טעינת המפתח</button>
+      </div>
+
+      <div id="src-card" hidden>
+        <p class="hint">דפדפן לא יכול לגשת לכרטיס חכם. הפעילו את העוזר המקומי (Windows):</p>
+        <pre class="code" dir="ltr">powershell -ExecutionPolicy Bypass -File demo\smartcard-helper.ps1</pre>
+        <p class="hint">העוזר מדפיס קוד גישה. הדביקו אותו כאן. Windows יבקש את קוד ה-PIN של הכרטיס בזמן החתימה.</p>
+        <div class="row">
+          <label class="field grow">כתובת העוזר <input id="helper-url" dir="ltr" value="http://127.0.0.1:8765"></label>
+          <label class="field grow">קוד גישה <input id="helper-token" dir="ltr" autocomplete="off"></label>
+        </div>
+        <button id="btn-helper-list">הצגת התעודות</button>
+        <label class="field">תעודה
+          <select id="helper-certs" dir="ltr" disabled></select>
+        </label>
+      </div>
+
+      <div id="signer-info" class="info" hidden></div>
+      <div class="row">
+        <button id="btn-sign" class="primary" disabled>חתימה ויצירת קובץ</button>
+        <span id="sign-status" class="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="sign-out" class="card" hidden>
+    <h2>מה קרה, שלב אחר שלב</h2>
+    <ol class="steps">
+      <li><h3>Protected header (JSON)</h3><pre id="o-header" class="code" dir="ltr"></pre></li>
+      <li><h3><span class="f" dir="ltr">protected = B64URL(header)</span></h3><pre id="o-protected" class="code wrap" dir="ltr"></pre></li>
+      <li><h3><span class="f" dir="ltr">payload = B64URL(body bytes)</span></h3><pre id="o-payload" class="code wrap" dir="ltr"></pre></li>
+      <li><h3>קלט החתימה: <span class="f" dir="ltr">ASCII(protected + "." + payload)</span></h3><pre id="o-input" class="code wrap" dir="ltr"></pre></li>
+      <li><h3><span class="f" dir="ltr">signature = B64URL(<span id="o-sigdesc"></span>)</span></h3><pre id="o-signature" class="code wrap" dir="ltr"></pre></li>
+      <li><h3>הקובץ החתום</h3><pre id="o-file" class="code wrap" dir="ltr"></pre></li>
+    </ol>
+    <div class="row">
+      <button id="btn-download-signed" class="primary">הורדת signed.json</button>
+      <button id="btn-copy-signed" class="ghost">העתקה</button>
+      <button id="btn-to-verify" class="ghost">← לאימות</button>
+      <button id="btn-to-curl" class="ghost">← להכנת curl</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= VERIFY ================= -->
+<section id="tab-verify" class="tab" role="tabpanel" hidden>
+  <div class="card">
+    <div class="seg" role="radiogroup">
+      <label><input type="radio" name="vmode" value="file" checked> קובץ חתום</label>
+      <label><input type="radio" name="vmode" value="rest"> כותרת REST + גוף</label>
+    </div>
+
+    <div id="v-file">
+      <div class="row">
+        <label class="ghost file">טעינת קובץ חתום<input type="file" id="v-file-input" accept=".json,application/json,text/plain"></label>
+        <span class="hint">או הדביקו:</span>
+      </div>
+      <textarea id="v-signed" dir="ltr" spellcheck="false" rows="7" placeholder='{"protected":"…","payload":"…","signature":"…"}'></textarea>
+    </div>
+
+    <div id="v-rest" hidden>
+      <label class="field">ערך הכותרת <code dir="ltr">X-JAdES-Signature</code>
+        <textarea id="v-header" dir="ltr" spellcheck="false" rows="3" placeholder="eyJhbGciOi…..MEUCIQ…"></textarea>
+      </label>
+      <label class="field">גוף הבקשה (הבתים המדויקים)
+        <textarea id="v-body" dir="ltr" spellcheck="false" rows="5"></textarea>
+      </label>
+      <div class="row">
+        <label class="ghost file">טעינת גוף מקובץ (בתים מדויקים)<input type="file" id="v-body-file"></label>
+        <span id="v-body-status" class="status"></span>
+      </div>
+    </div>
+
+    <div class="row">
+      <label class="field">זמן אימות (Unix, ריק = עכשיו)
+        <input id="v-now" dir="ltr" inputmode="numeric" placeholder="1787255527">
+      </label>
+      <button id="btn-verify" class="primary">אימות</button>
+    </div>
+  </div>
+
+  <div id="verify-out" hidden>
+    <div id="v-verdict" class="verdict"></div>
+    <div class="grid2">
+      <div class="card"><h2>Protected header</h2><pre id="v-o-header" class="code" dir="ltr"></pre></div>
+      <div class="card"><h2>Body / payload</h2><pre id="v-o-payload" class="code" dir="ltr"></pre><details class="raw"><summary>הבתים המקוריים (מה שנחתם בפועל)</summary><pre id="v-o-raw" class="code wrap" dir="ltr"></pre></details></div>
+    </div>
+    <div class="card"><h2>תעודת החותם (<code>x5c[0]</code>)</h2><dl id="v-o-cert" class="kv"></dl></div>
+  </div>
+
+  <details class="card">
+    <summary>קודי סיבה ובדיקות (לפי הסדר)</summary>
+    <table class="reasons">
+      <tr><th>קוד</th><th>מתי</th></tr>
+      <tr><td>MALFORMED_INPUT</td><td>לא JSON, חסר חלק, Base64URL לא תקין (כולל ריפוד <code>=</code> או <code>+</code> <code>/</code>), כותרת REST שאינה <code dir="ltr">a..b</code></td></tr>
+      <tr><td>MALFORMED_HEADER</td><td>ה-protected header אינו אובייקט JSON</td></tr>
+      <tr><td>MISSING_ALG / MISSING_IAT / MISSING_X5C</td><td>שדה חסר או מסוג שגוי (<code>iat</code> חייב להיות מספר שלם)</td></tr>
+      <tr><td>UNSUPPORTED_ALG</td><td><code>alg</code> אינו PS256 / ES256</td></tr>
+      <tr><td>BAD_CERTIFICATE</td><td><code>x5c[0]</code> אינו תעודה</td></tr>
+      <tr><td>ALG_KEY_MISMATCH</td><td>האלגוריתם לא מתאים לסוג המפתח / לעקומה</td></tr>
+      <tr><td>WEAK_KEY</td><td>RSA קטן מ-2048 ביט</td></tr>
+      <tr><td>BAD_SIGNATURE</td><td>החתימה לא מאומתת (תוכן או כותרת שונו)</td></tr>
+      <tr><td>EXPIRED</td><td><code>iat</code> ישן מ-24 שעות</td></tr>
+      <tr><td>NOT_YET_VALID</td><td><code>iat</code> יותר מ-5 דקות בעתיד</td></tr>
+    </table>
+  </details>
+</section>
+
+<!-- ================= CURL ================= -->
+<section id="tab-curl" class="tab" role="tabpanel" hidden>
+  <div class="card">
+    <h2>קובץ חתום לשליחה</h2>
+    <div class="row">
+      <label class="ghost file">טעינת קובץ חתום<input type="file" id="c-file-input" accept=".json,application/json,text/plain"></label>
+      <span class="hint">או הדביקו (מתמלא אוטומטית אחרי חתימה):</span>
+    </div>
+    <textarea id="c-signed" dir="ltr" spellcheck="false" rows="5"></textarea>
+
+    <div class="row">
+      <label class="field">Method
+        <select id="c-method" dir="ltr">
+          <option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+        </select>
+      </label>
+      <label class="field grow">כתובת בסיס
+        <input id="c-base" dir="ltr" value="https://api.example.gov.il">
+      </label>
+      <label class="field grow">Path
+        <input id="c-path" dir="ltr" value="/customs/v1/declarations">
+      </label>
+    </div>
+    <div class="row">
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="shell" value="bash" checked> bash</label>
+        <label><input type="radio" name="shell" value="ps"> PowerShell</label>
+      </div>
+      <label><input type="checkbox" id="c-mtls" checked> הוספת תעודת mTLS של השולח</label>
+      <button id="btn-curl" class="primary">הכנת curl</button>
+    </div>
+  </div>
+
+  <div id="curl-out" hidden>
+    <div id="c-verdict" class="verdict"></div>
+    <div class="card">
+      <h2>1. קובץ הגוף <code>body.json</code></h2>
+      <p class="hint">הגוף הוא ה-<code>payload</code> המפוענח, בייט-בייט. שמרו אותו ושלחו אותו כמו שהוא, בלי לעצב אותו מחדש.</p>
+      <pre id="c-body" class="code" dir="ltr"></pre>
+      <button id="btn-download-body" class="ghost">הורדת body.json</button>
+    </div>
+    <div class="card">
+      <h2>2. פקודת curl</h2>
+      <pre id="c-cmd" class="code" dir="ltr"></pre>
+      <button id="btn-copy-cmd" class="ghost">העתקה</button>
+      <h3>מה כל שורה עושה</h3>
+      <ul class="explain">
+        <li><code dir="ltr">-X</code> והכתובת: ה-Method וה-Path שבחרתם. החתימה לא מכסה אותם.</li>
+        <li><code dir="ltr">Content-Type: application/json</code>: לא חלק מהחתימה.</li>
+        <li><code dir="ltr">X-JAdES-Signature: protected..signature</code>: אותם שני ערכים מהקובץ, עם שתי נקודות ביניהם (החלק האמצעי ריק כי ה-payload עובר בגוף).</li>
+        <li><code dir="ltr">--data-binary @body.json</code>: שולח את הקובץ בדיוק כמו שהוא. <b>לא</b> <code dir="ltr">-d</code>, שמוחק ירידות שורה ומשנה את הבתים.</li>
+        <li id="c-explain-mtls"><code dir="ltr">--cert-type P12 --cert</code>: תעודת ה-mTLS של <b>מי ששולח</b>, לא של מי שחתם. אלה שתי תעודות שונות.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</main>
+
+<script src="../vendor/forge-1.4.3.min.js"></script>
+<script src="jades.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 # JAdES Signing for Customs API Consumers — Design
 
 Date: 2026-11-09
-Status: Draft for approval
+Status: Revised 2026-11-09. The deliverable is now **one demo HTML page** plus a local
+smart-card helper (§1, §6, §7, §8, §9). The signature format (§3–§5) is unchanged.
 
 ## 1. Intent
 
@@ -23,15 +24,25 @@ These are two different certificates and must never be mixed.
 
 ### Deliverable
 
-**Reference code plus a spec** — not published packages.
+**One self-contained demo HTML page** that shows the mechanism to a developer, plus a
+small local helper for smart-card signing. *(Replaces the earlier Node/Python/.NET
+reference implementations, cross-language vectors and mock Customs endpoint.)*
 
-- A consumer-facing **spec** (the source of truth).
-- Working reference implementations in **Node.js, Python and .NET** that consumers copy
-  or adapt.
-- Shared **cross-language test vectors** proving all three implementations agree.
-- A small **mock Customs** endpoint so consumers can test an end-to-end call locally.
+The page lets a developer:
 
-Verify is included in the reference code. Consumers use it to self-check before sending.
+1. **Sign** — type or paste JSON, choose a key (a `.pfx` + password, or a smart card
+   through the local helper), and create a signed file in the §4.1 format. Every
+   intermediate step is shown: protected header JSON, its B64URL, the signing input,
+   the signature, the file.
+2. **Verify** — load a signed file (or paste a REST header value + body) and see
+   valid/invalid with the §4.4 reason code, next to the protected header and the
+   payload rendered as JSON.
+3. **Prepare curl** — from a signed file, enter the URL/path and HTTP method and get a
+   ready `curl` command with a correct `X-JAdES-Signature` header and the exact body
+   bytes. The point is that a developer understands what their own call must look like.
+
+The page runs entirely in the browser (no server, works offline). Keys never leave the
+browser / the smart card.
 
 **A real Customs-side verifier already exists and is the authority.** The reference
 Verify must accept and reject exactly what it does. Consequences:
@@ -50,8 +61,8 @@ Verify must accept and reject exactly what it does. Consequences:
 **Goals**
 - One signing format, two transports (file, HTTP header), identical verification.
 - A signed file can be relayed by a third party via `SendFromFile` and verify at Customs.
-- Signing keys from `.pfx`/`.p12` files and from HSMs / smart cards (PKCS#11).
-- A file signed in any of the three languages verifies in all three.
+- Signing keys from `.pfx`/`.p12` files and from smart cards (via the local helper).
+- A developer can see every byte that is signed and sent.
 
 **Non-goals (for now)**
 - Certificate trust: chain building, trusted CA lists, revocation (CRL/OCSP),
@@ -63,19 +74,20 @@ Verify must accept and reject exactly what it does. Consequences:
   re-sent within the 24-hour window, to any endpoint. This is accepted for now. Future
   option: a required `jti` member so Customs can reject duplicates; the format leaves
   room for it because extra header members are already allowed.
-- Windows certificate store.
 - Batch / multi-file processing. One file at a time.
-- Published npm / PyPI / NuGet packages.
-- Web-framework middleware (Express / FastAPI / ASP.NET plug-ins).
+- Reference libraries, packages, a mock server, or sending the request from the page
+  (the page prepares a `curl` command; it does not call the API).
+- Generic PKCS#11 / HSM support. Smart cards are reached through the Windows certificate
+  store only (§6.3).
 
 **Anti-goals (failure even if it "works")**
-- The three implementations disagree on any byte (signing input, encoding, signature
-  format), so a file signed in one language fails in another.
+- The page signs or shows bytes that differ from what `curl` sends, so a command copied
+  from the page fails verification.
 - The REST body is re-serialized (re-formatted JSON, changed whitespace, changed
   encoding) between signing and sending, breaking verification.
 - The mTLS client certificate is used as, or confused with, the signing certificate.
-- The reference code is so abstract that a consumer can't see the mechanism.
-  Clarity beats cleverness — this code is an explanation.
+- The page is so abstract that a developer can't see the mechanism.
+  Clarity beats cleverness — the page is an explanation.
 
 ## 3. The signature format
 
@@ -262,6 +274,25 @@ empty payload.
 
 ## 6. Keys
 
+> **Revised.** §6.1–§6.2 below describe the original multi-language design and are kept
+> for reference only. The demo page uses §6.3.
+
+### 6.3 Keys in the demo page
+
+- **PFX:** the user picks a `.pfx`/`.p12` file and types its password. The page decrypts
+  it in the browser (node-forge, inlined) and signs with WebCrypto. `alg` follows the key:
+  RSA → `PS256`, EC P-256 → `ES256`; other keys are refused.
+- **Smart card:** a browser cannot reach a smart card's private key. A small local helper
+  (`demo/smartcard-helper.ps1`, Windows PowerShell 5.1, no install) listens on
+  `http://127.0.0.1:8765` only. It lists the certificates with a private key in the
+  Windows `CurrentUser\My` store (where smart-card certificates appear through the card's
+  minidriver) and signs the signing input with the chosen one. Windows asks for the PIN;
+  the key never leaves the card.
+  - At startup the helper prints a random access token. The page must send it in every
+    request, so another web page cannot use the helper.
+  - The helper signs only the signing input it is given and returns the raw signature
+    (PS256: RSASSA-PSS salt 32; ES256: raw `R‖S`). The page builds the file itself.
+
 ### 6.1 Signer abstraction
 
 Every sign operation takes a **signer** with two capabilities:
@@ -298,60 +329,52 @@ device. The certificate is read from the token by default.
 Separate from the signer. *(My call: supplied as `.pfx`/`.p12` + password only;
 HSM-backed mTLS is out of scope for the reference code.)*
 
-## 7. Reference code structure
+## 7. Repository structure
 
 ```
-spec/             consumer-facing spec (Markdown), the source of truth
-node/             Node.js 20+ implementation + CLI + tests
-python/           Python 3.10+ implementation + CLI + tests
-dotnet/           .NET 8 implementation + CLI + tests
-test-vectors/     shared certs, signed files, header+body pairs, expected results
-mock-customs/     local HTTPS+mTLS endpoint that runs VerifyRest and reports the result
-docs/specs/       this design
+demo/jades-demo.html        the demo page: one self-contained file (built)
+demo/src/                   page source (HTML/CSS/JS), readable
+demo/vendor/                node-forge bundle + licence (inlined by the build)
+demo/build.mjs              node demo/build.mjs → demo/jades-demo.html
+demo/smartcard-helper.ps1   local smart-card signing helper (§6.3)
+test-vectors/certs/         test certificates (.pfx password test1234)
+docs/specs/                 this design
 ```
 
-Each language exposes the same operations with idiomatic naming:
-`Sign`, `Verify`, `SignRest`, `Send`, `SendFromFile`, `VerifyRest`.
+### 7.1 The page
 
-*(My call:)* Each language also has a small CLI (`sign-file`, `verify-file`,
-`send`, `send-file`) so consumers can try it without writing code.
+- **Sign tab.** The payload is the **exact UTF-8 bytes of the text box**. The page checks
+  that it is valid JSON but never re-formats it, so what you see is what is signed.
+  Output: each intermediate value (§3), the signed file, a download button.
+- **Verify tab.** Two inputs: a signed file (load or paste), or a REST header value +
+  body. Optional "verify at" time (`now`). Runs the §4.3 checks in order and shows the
+  §4.4 result, the protected header as JSON, the payload as JSON (or text if it is not
+  JSON), and the certificate subject.
+- **curl tab.** Takes the current signed file. The user enters the URL/path and HTTP
+  method. The page shows:
+  - the body file (`body.json` = decoded payload bytes, downloadable, byte-exact);
+  - the header value `protected..signature`;
+  - a `curl` command that uses `--data-binary @body.json` (never `-d`, which strips
+    newlines), `Content-Type: application/json`, and the `X-JAdES-Signature` header;
+    with a bash / PowerShell (`curl.exe`) switch for line continuation;
+  - placeholders for the provider's mTLS certificate (`--cert-type P12 --cert …`),
+    labelled as the deliverer's certificate, separate from the signing certificate.
+- Hebrew UI, right-to-left; code and values left-to-right.
 
-*(My call:)* `mock-customs` is written once (Node), accepts any client certificate,
-logs the mTLS identity and the signer identity separately (to make the two-certificate
-point visible), and returns the `VerifyResult` as JSON.
+## 8. Testing
 
-## 8. Test vectors and testing
+- Sign → verify round trip in the page with `rsa2048.pfx` (PS256) and `ec256.pfx`
+  (ES256).
+- The page's output is cross-checked by an independent verifier (OpenSSL) once per alg.
+- Negative checks in the page: tampered payload → `BAD_SIGNATURE`, old `iat` →
+  `EXPIRED`, `rsa1024.pfx` refused for signing and → `WEAK_KEY` on verify, header with
+  one dot → `MALFORMED_INPUT`, padded B64URL → `MALFORMED_INPUT`.
+- The generated `curl` command is run against a local listener to confirm the body and
+  header arrive byte-exact.
+- The smart-card helper is tested with a software certificate in `CurrentUser\My`
+  (imported from a test `.pfx`); real smart-card behaviour is a documented testing gap.
 
-- `test-vectors/certs/`: test RSA-2048 and EC P-256 keys/certs as `.pfx` (password in a
-  README — test material only).
-- Positive vectors: signed files and header+body pairs produced by **each** language for
-  **each** alg, with fixed `iat` and the `now` value to verify at.
-- Negative vectors: one per reason code (tampered payload, tampered header, alg/key
-  mismatch, expired, future, missing members, DER-encoded ES256 signature, body with
-  changed whitespace, etc.).
-- Every language's test suite verifies **all** vectors, including the other languages'.
-- PKCS#11 path tested against **SoftHSM2** (software HSM) so CI doesn't need hardware.
-- Note: PSS signatures are randomized, so vectors test *verification*, not
-  byte-identical signing output.
+## 9. Left to the builder
 
-## 9. The consumer spec (`spec/`)
-
-Written for Customs API consumers, not for this team. Must cover:
-
-- What is signed and why (author vs. deliverer; two certificates).
-- The format (§3), with a fully worked example: header JSON → B64URL → signing input →
-  signature → file → header value.
-- File mode, REST mode, and the relay flow (client signs → provider sends), with a
-  sequence diagram.
-- The 24-hour window and its effect on relaying.
-- The byte-exact body rule and common ways to break it.
-- Key options (`.pfx`, PKCS#11) and the ES256 `R‖S` pitfall.
-- Verify reason codes.
-- Pointers to the three reference implementations and the mock endpoint.
-
-## 10. Left to the builder
-
-- Internal code structure, naming conventions per language, test frameworks.
-- Choice of HTTP client per language (as long as raw bytes are sent unchanged).
-- How the mock-customs TLS server certificate is generated.
-- CLI argument shapes.
+- Page layout and styling.
+- Helper port (default 8765) and token format.

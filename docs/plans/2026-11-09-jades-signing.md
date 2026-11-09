@@ -1,5 +1,9 @@
 # JAdES Signing Reference Implementation Plan
 
+> **SUPERSEDED (2026-11-09).** Stopped after Task 2. The deliverable changed to a single
+> demo HTML page; see the revised design `docs/specs/2026-11-09-jades-signing-design.md`
+> §1 and §7. The Node code from Tasks 2–3 was removed. Task 1 (test certificates) is kept.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reference code (Node.js, Python, .NET) plus a consumer spec showing Customs API consumers how to sign payloads as JAdES-style JWS, as a file or in the `X-JAdES-Signature` HTTP header, with identical verification everywhere.
