@@ -12,6 +12,7 @@
                     data      = Base64URL of the JWS signing input (ASCII protected.payload)
                     signature = Base64URL of the raw signature
                                 PS256: RSASSA-PSS, SHA-256, MGF1-SHA-256, salt 32
+                                RS256: RSASSA-PKCS1-v1_5, SHA-256
                                 ES256: ECDSA P-256, SHA-256, 64-byte R||S
 
   Windows shows its own PIN prompt when the card needs it; the key never leaves the card.
@@ -65,15 +66,21 @@ function Invoke-Sign($req) {
         throw "the key provider refused RSA-PSS (old CSP keys cannot do PSS): $($_.Exception.InnerException.Message)$($_.Exception.Message)"
       }
     }
+    'RS256' {
+      $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+      if (-not $rsa) { throw 'RS256 needs an RSA key; this certificate is not RSA' }
+      if ($rsa.KeySize -lt 2048) { throw "RSA key is $($rsa.KeySize) bit; at least 2048 is required" }
+      $sig = $rsa.SignData($data, $sha256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    }
     'ES256' {
-      $ec = [System.Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($cert)
+      $ec =[System.Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($cert)
       if (-not $ec) { throw 'ES256 needs an EC key; this certificate is not EC' }
       if ($ec.KeySize -ne 256) { throw "ES256 needs P-256; this key is $($ec.KeySize) bit" }
       # Windows CNG returns IEEE P1363 (R||S), which is what JWS needs.
       $sig = $ec.SignData($data, $sha256)
       if ($sig.Length -ne 64) { throw "unexpected ECDSA signature length $($sig.Length)" }
     }
-    default { throw "unsupported alg '$alg' (PS256 or ES256)" }
+    default { throw "unsupported alg '$alg' (PS256, RS256 or ES256)" }
   }
   Write-Host ("  signed {0} bytes with {1} [{2}]" -f $data.Length, $cert.Subject, $alg)
   @{ signature = (ConvertTo-B64Url $sig) }

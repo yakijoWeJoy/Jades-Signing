@@ -32,7 +32,7 @@
     MISSING_ALG: 'חסר alg או שהוא מסוג שגוי',
     MISSING_IAT: 'חסר iat או שאינו מספר שלם',
     MISSING_X5C: 'חסר x5c או שאינו מערך מחרוזות לא ריק',
-    UNSUPPORTED_ALG: 'אלגוריתם לא נתמך (רק PS256 / ES256)',
+    UNSUPPORTED_ALG: 'אלגוריתם לא נתמך (רק PS256 / ES256 / RS256)',
     BAD_CERTIFICATE: 'x5c[0] אינו תעודה תקינה',
     ALG_KEY_MISMATCH: 'האלגוריתם לא מתאים למפתח שבתעודה',
     WEAK_KEY: 'מפתח RSA קטן מ-2048 ביט',
@@ -103,6 +103,12 @@
     $('btn-sign').disabled = !signer;
     const info = $('signer-info');
     info.hidden = !signer;
+    // Algorithm choice: only RSA keys have more than one (PS256 / RS256).
+    const algSel = $('sign-alg');
+    algSel.textContent = '';
+    for (const a of (signer ? signer.algs : [])) algSel.add(new Option(a, a));
+    if (signer) algSel.value = signer.alg;
+    $('sign-alg-field').hidden = !signer || signer.algs.length < 2;
     if (!signer) return;
     const c = signer.certificate;
     info.textContent = '';
@@ -118,6 +124,12 @@
     }
     info.append(dl);
   }
+
+  $('sign-alg').addEventListener('change', (e) => {
+    if (!state.signer || !state.signer.algs.includes(e.target.value)) return;
+    state.signer.alg = e.target.value;
+    setSigner(state.signer);
+  });
 
   $('btn-load-pfx').addEventListener('click', async () => {
     const f = $('pfx-file').files[0];
@@ -181,17 +193,19 @@
   function pickHelperCert() {
     const c = helperCerts[Number($('helper-certs').value)];
     if (!c) return setSigner(null);
-    const { alg, error } = Jades.algForCertificate(c.parsed);
+    const { alg, algs, error } = Jades.algForCertificate(c.parsed);
     if (error) return setSigner(null);
-    setSigner({
+    const signer = {
       kind: 'card',
       certificate: c.parsed,
+      algs,
       alg,
       sign: async (input) => {
-        const { signature } = await helperCall('/sign', { thumbprint: c.thumbprint, alg, data: Jades.b64urlEncode(input) });
+        const { signature } = await helperCall('/sign', { thumbprint: c.thumbprint, alg: signer.alg, data: Jades.b64urlEncode(input) });
         return Jades.b64urlDecode(signature);
       },
-    });
+    };
+    setSigner(signer);
   }
   $('helper-certs').addEventListener('change', pickHelperCert);
 
@@ -209,7 +223,9 @@
       $('o-input').textContent = s.signingInput;
       $('o-sigdesc').textContent = s.header.alg === 'ES256'
         ? `ECDSA P-256 SHA-256: ${s.signature.length} bytes R‖S`
-        : `RSASSA-PSS SHA-256, salt 32: ${s.signature.length} bytes`;
+        : s.header.alg === 'RS256'
+          ? `RSASSA-PKCS1-v1_5 SHA-256: ${s.signature.length} bytes`
+          : `RSASSA-PSS SHA-256, salt 32: ${s.signature.length} bytes`;
       $('o-signature').textContent = s.signatureB64;
       $('o-file').textContent = pretty(s.file);
       $('sign-out').hidden = false;

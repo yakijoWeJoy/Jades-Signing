@@ -65,6 +65,9 @@
       </div>
 
       <div id="signer-info" class="info" hidden></div>
+      <label id="sign-alg-field" class="field" hidden>אלגוריתם חתימה (מפתח RSA)
+        <select id="sign-alg" dir="ltr"></select>
+      </label>
       <div class="row">
         <button id="btn-sign" class="primary" disabled>חתימה ויצירת קובץ</button>
         <span id="sign-status" class="status"></span>
@@ -145,7 +148,7 @@
       <tr><td>MALFORMED_INPUT</td><td>לא JSON, חסר חלק, Base64URL לא תקין (כולל ריפוד <code>=</code> או <code>+</code> <code>/</code>), כותרת REST שאינה <code dir="ltr">a..b</code></td></tr>
       <tr><td>MALFORMED_HEADER</td><td>ה-protected header אינו אובייקט JSON</td></tr>
       <tr><td>MISSING_ALG / MISSING_IAT / MISSING_X5C</td><td>שדה חסר או מסוג שגוי (<code>iat</code> חייב להיות מספר שלם). כשהסימון "חובה <code>iat</code>" כבוי, <code>iat</code> חסר מתקבל ובדיקת הזמן מדולגת</td></tr>
-      <tr><td>UNSUPPORTED_ALG</td><td><code>alg</code> אינו PS256 / ES256</td></tr>
+      <tr><td>UNSUPPORTED_ALG</td><td><code>alg</code> אינו PS256 / ES256 / RS256</td></tr>
       <tr><td>BAD_CERTIFICATE</td><td><code>x5c[0]</code> אינו תעודה</td></tr>
       <tr><td>ALG_KEY_MISMATCH</td><td>האלגוריתם לא מתאים לסוג המפתח / לעקומה</td></tr>
       <tr><td>WEAK_KEY</td><td>RSA קטן מ-2048 ביט</td></tr>

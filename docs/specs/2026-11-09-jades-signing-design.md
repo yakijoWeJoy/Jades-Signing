@@ -137,6 +137,12 @@ verify never re-serializes the header.
 |---|---|---|---|
 | `PS256` | RSA, ≥ 2048 bits | RSASSA-PSS, SHA-256, MGF1-SHA-256, salt length 32 | modulus-length bytes |
 | `ES256` | EC P-256 | ECDSA with SHA-256 | **64 bytes raw `R‖S`** (not DER) |
+| `RS256` | RSA, ≥ 2048 bits | RSASSA-PKCS1-v1_5, SHA-256 | modulus-length bytes |
+
+`RS256` is supported for signing and verification. For RSA keys the signer defaults to
+`PS256`; `RS256` is an explicit choice (in the demo, the "אלגוריתם חתימה" list), meant
+for tokens or receivers that cannot do PSS. Where the rest of this document says
+"`PS256` or `ES256`", read `RS256` as allowed too.
 
 The raw `R‖S` encoding for ES256 is a known cross-language trap (several crypto APIs and
 most PKCS#11 tokens return or expect different forms; .NET and Node default differently).

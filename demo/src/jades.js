@@ -150,10 +150,10 @@ const Jades = (() => {
       : c.keyType === 'EC' ? (c.curve === OID.p256 ? 'EC P-256' : `EC (curve ${c.curve || '?'})`)
         : `other (${c.algOid})`;
 
-  // Which alg a certificate can sign with, or a reason it cannot.
+  // Which algs a certificate can sign with (alg = the default, algs = all choices), or a reason it cannot.
   function algForCertificate(c) {
-    if (c.keyType === 'RSA') return c.rsaBits < MIN_RSA_BITS ? { error: REASONS.WEAK_KEY } : { alg: 'PS256' };
-    if (c.keyType === 'EC' && c.curve === OID.p256) return { alg: 'ES256' };
+    if (c.keyType === 'RSA') return c.rsaBits < MIN_RSA_BITS ? { error: REASONS.WEAK_KEY } : { alg: 'PS256', algs: ['PS256', 'RS256'] };
+    if (c.keyType === 'EC' && c.curve === OID.p256) return { alg: 'ES256', algs: ['ES256'] };
     return { error: REASONS.ALG_KEY_MISMATCH };
   }
 
@@ -162,11 +162,13 @@ const Jades = (() => {
   const PARAMS = {
     PS256: { import: { name: 'RSA-PSS', hash: 'SHA-256' }, sign: { name: 'RSA-PSS', saltLength: 32 } },
     ES256: { import: { name: 'ECDSA', namedCurve: 'P-256' }, sign: { name: 'ECDSA', hash: 'SHA-256' } },
+    RS256: { import: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, sign: { name: 'RSASSA-PKCS1-v1_5' } },
   };
 
   // ---------- signers ----------
 
-  // Opens a .pfx/.p12 in the browser. Returns { certificate (parsed), alg, sign(input) }.
+  // Opens a .pfx/.p12 in the browser. Returns { certificate (parsed), algs, alg, sign(input) }.
+  // alg is the one in use; set it to any entry of algs (RSA: PS256 or RS256) before signing.
   async function pfxSigner(pfxBytes, password) {
     let p12;
     try {
@@ -193,13 +195,20 @@ const Jades = (() => {
     if (choice.error) {
       throw new Error(`This key cannot sign: ${describeKey(certificate)} (${choice.error}). Use RSA ≥ 2048 or EC P-256.`);
     }
-    const key = await crypto.subtle.importKey('pkcs8', pkcs8, PARAMS[choice.alg].import, false, ['sign']);
-    return {
+    // One WebCrypto key per alg: the padding scheme is fixed at import time.
+    const keys = {};
+    for (const a of choice.algs) keys[a] = await crypto.subtle.importKey('pkcs8', pkcs8, PARAMS[a].import, false, ['sign']);
+    const signer = {
       kind: 'pfx',
       certificate,
+      algs: choice.algs,
       alg: choice.alg,
-      sign: async (input) => new Uint8Array(await crypto.subtle.sign(PARAMS[choice.alg].sign, key, input)),
+      sign: async (input) => {
+        if (!Object.hasOwn(keys, signer.alg)) throw new Error(`This key cannot sign with ${signer.alg}.`);
+        return new Uint8Array(await crypto.subtle.sign(PARAMS[signer.alg].sign, keys[signer.alg], input));
+      },
     };
+    return signer;
   }
 
   // ---------- sign ----------
@@ -257,13 +266,13 @@ const Jades = (() => {
     if (!Array.isArray(header.x5c) || header.x5c.length === 0 || !header.x5c.every((x) => typeof x === 'string')) {
       return fail(REASONS.MISSING_X5C);
     }
-    if (header.alg !== 'PS256' && header.alg !== 'ES256') return fail(REASONS.UNSUPPORTED_ALG);
+    if (!Object.hasOwn(PARAMS, header.alg)) return fail(REASONS.UNSUPPORTED_ALG);
 
     // 4. Certificate parses and its key matches alg.
     let cert;
     try { cert = parseCertificate(b64Decode(header.x5c[0])); } catch { return fail(REASONS.BAD_CERTIFICATE); }
     result.certificate = cert;
-    if (header.alg === 'PS256' && cert.keyType !== 'RSA') return fail(REASONS.ALG_KEY_MISMATCH);
+    if (header.alg !== 'ES256' && cert.keyType !== 'RSA') return fail(REASONS.ALG_KEY_MISMATCH);
     if (header.alg === 'ES256' && !(cert.keyType === 'EC' && cert.curve === OID.p256)) return fail(REASONS.ALG_KEY_MISMATCH);
     if (cert.keyType === 'RSA' && cert.rsaBits < MIN_RSA_BITS) return fail(REASONS.WEAK_KEY);
 
