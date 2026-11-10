@@ -222,7 +222,7 @@ const Jades = (() => {
 
   // ---------- verify (§4.3 order, first failure wins, never throws) ----------
 
-  async function verify(signed, { now } = {}) {
+  async function verify(signed, { now, requireIat = true } = {}) {
     now = now ?? Math.floor(Date.now() / 1000);
     const result = { valid: false, reason: null, header: null, certificate: null, payload: null, signingInput: null };
     const fail = (reason) => Object.assign(result, { reason });
@@ -251,7 +251,9 @@ const Jades = (() => {
 
     // 3. Required members and types.
     if (typeof header.alg !== 'string') return fail(REASONS.MISSING_ALG);
-    if (typeof header.iat !== 'number' || !Number.isInteger(header.iat)) return fail(REASONS.MISSING_IAT);
+    // iat may be absent only when requireIat is off; a present iat must always be an integer.
+    const hasIat = header.iat !== undefined;
+    if (hasIat ? !Number.isInteger(header.iat) : requireIat) return fail(REASONS.MISSING_IAT);
     if (!Array.isArray(header.x5c) || header.x5c.length === 0 || !header.x5c.every((x) => typeof x === 'string')) {
       return fail(REASONS.MISSING_X5C);
     }
@@ -273,9 +275,11 @@ const Jades = (() => {
     } catch { ok = false; }
     if (!ok) return fail(REASONS.BAD_SIGNATURE);
 
-    // 6. Time window: now - 24h <= iat <= now + 5 min.
-    if (now - header.iat > MAX_AGE) return fail(REASONS.EXPIRED);
-    if (header.iat - now > MAX_FUTURE) return fail(REASONS.NOT_YET_VALID);
+    // 6. Time window: now - 24h <= iat <= now + 5 min. Skipped when iat is absent (requireIat off).
+    if (hasIat) {
+      if (now - header.iat > MAX_AGE) return fail(REASONS.EXPIRED);
+      if (header.iat - now > MAX_FUTURE) return fail(REASONS.NOT_YET_VALID);
+    }
 
     result.valid = true;
     return result;

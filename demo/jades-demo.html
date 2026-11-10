@@ -226,6 +226,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <label class="field">זמן אימות (Unix, ריק = עכשיו)
         <input id="v-now" dir="ltr" inputmode="numeric" placeholder="1787255527">
       </label>
+      <label><input type="checkbox" id="v-require-iat" checked> חובה <code>iat</code> (<code>MISSING_IAT</code>)</label>
       <button id="btn-verify" class="primary">אימות</button>
     </div>
   </div>
@@ -245,7 +246,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <tr><th>קוד</th><th>מתי</th></tr>
       <tr><td>MALFORMED_INPUT</td><td>לא JSON, חסר חלק, Base64URL לא תקין (כולל ריפוד <code>=</code> או <code>+</code> <code>/</code>), כותרת REST שאינה <code dir="ltr">a..b</code></td></tr>
       <tr><td>MALFORMED_HEADER</td><td>ה-protected header אינו אובייקט JSON</td></tr>
-      <tr><td>MISSING_ALG / MISSING_IAT / MISSING_X5C</td><td>שדה חסר או מסוג שגוי (<code>iat</code> חייב להיות מספר שלם)</td></tr>
+      <tr><td>MISSING_ALG / MISSING_IAT / MISSING_X5C</td><td>שדה חסר או מסוג שגוי (<code>iat</code> חייב להיות מספר שלם). כשהסימון "חובה <code>iat</code>" כבוי, <code>iat</code> חסר מתקבל ובדיקת הזמן מדולגת</td></tr>
       <tr><td>UNSUPPORTED_ALG</td><td><code>alg</code> אינו PS256 / ES256</td></tr>
       <tr><td>BAD_CERTIFICATE</td><td><code>x5c[0]</code> אינו תעודה</td></tr>
       <tr><td>ALG_KEY_MISMATCH</td><td>האלגוריתם לא מתאים לסוג המפתח / לעקומה</td></tr>
@@ -545,7 +546,7 @@ const Jades = (() => {
 
   // ---------- verify (§4.3 order, first failure wins, never throws) ----------
 
-  async function verify(signed, { now } = {}) {
+  async function verify(signed, { now, requireIat = true } = {}) {
     now = now ?? Math.floor(Date.now() / 1000);
     const result = { valid: false, reason: null, header: null, certificate: null, payload: null, signingInput: null };
     const fail = (reason) => Object.assign(result, { reason });
@@ -574,7 +575,9 @@ const Jades = (() => {
 
     // 3. Required members and types.
     if (typeof header.alg !== 'string') return fail(REASONS.MISSING_ALG);
-    if (typeof header.iat !== 'number' || !Number.isInteger(header.iat)) return fail(REASONS.MISSING_IAT);
+    // iat may be absent only when requireIat is off; a present iat must always be an integer.
+    const hasIat = header.iat !== undefined;
+    if (hasIat ? !Number.isInteger(header.iat) : requireIat) return fail(REASONS.MISSING_IAT);
     if (!Array.isArray(header.x5c) || header.x5c.length === 0 || !header.x5c.every((x) => typeof x === 'string')) {
       return fail(REASONS.MISSING_X5C);
     }
@@ -596,9 +599,11 @@ const Jades = (() => {
     } catch { ok = false; }
     if (!ok) return fail(REASONS.BAD_SIGNATURE);
 
-    // 6. Time window: now - 24h <= iat <= now + 5 min.
-    if (now - header.iat > MAX_AGE) return fail(REASONS.EXPIRED);
-    if (header.iat - now > MAX_FUTURE) return fail(REASONS.NOT_YET_VALID);
+    // 6. Time window: now - 24h <= iat <= now + 5 min. Skipped when iat is absent (requireIat off).
+    if (hasIat) {
+      if (now - header.iat > MAX_AGE) return fail(REASONS.EXPIRED);
+      if (header.iat - now > MAX_FUTURE) return fail(REASONS.NOT_YET_VALID);
+    }
 
     result.valid = true;
     return result;
@@ -676,7 +681,7 @@ const Jades = (() => {
       code.textContent = r.reason;
       el.append(' ', code, ' – ' + (REASON_HE[r.reason] || ''));
     } else if (r.header) {
-      el.append(` · ${r.header.alg} · נחתם ${fmtTime(r.header.iat)}`);
+      el.append(` · ${r.header.alg} · ` + (r.header.iat === undefined ? 'ללא iat – זמן לא נבדק' : `נחתם ${fmtTime(r.header.iat)}`));
     }
   }
 
@@ -881,9 +886,10 @@ const Jades = (() => {
   $('btn-verify').addEventListener('click', async () => {
     let now;
     try { now = readNow($('v-now')); } catch (e) { return alert(e.message); }
+    const opts = { now, requireIat: $('v-require-iat').checked };
     const r = radioValue('vmode') === 'file'
-      ? await Jades.verify($('v-signed').value, { now })
-      : await Jades.verifyRest($('v-header').value, restBodyBytes || Jades.utf8($('v-body').value), { now });
+      ? await Jades.verify($('v-signed').value, opts)
+      : await Jades.verifyRest($('v-header').value, restBodyBytes || Jades.utf8($('v-body').value), opts);
 
     renderVerdict($('v-verdict'), r);
     $('v-o-header').textContent = r.header ? pretty(r.header) : '—';

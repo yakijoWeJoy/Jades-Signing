@@ -52,7 +52,7 @@
       code.textContent = r.reason;
       el.append(' ', code, ' – ' + (REASON_HE[r.reason] || ''));
     } else if (r.header) {
-      el.append(` · ${r.header.alg} · נחתם ${fmtTime(r.header.iat)}`);
+      el.append(` · ${r.header.alg} · ` + (r.header.iat === undefined ? 'ללא iat – זמן לא נבדק' : `נחתם ${fmtTime(r.header.iat)}`));
     }
   }
 
@@ -257,9 +257,10 @@
   $('btn-verify').addEventListener('click', async () => {
     let now;
     try { now = readNow($('v-now')); } catch (e) { return alert(e.message); }
+    const opts = { now, requireIat: $('v-require-iat').checked };
     const r = radioValue('vmode') === 'file'
-      ? await Jades.verify($('v-signed').value, { now })
-      : await Jades.verifyRest($('v-header').value, restBodyBytes || Jades.utf8($('v-body').value), { now });
+      ? await Jades.verify($('v-signed').value, opts)
+      : await Jades.verifyRest($('v-header').value, restBodyBytes || Jades.utf8($('v-body').value), opts);
 
     renderVerdict($('v-verdict'), r);
     $('v-o-header').textContent = r.header ? pretty(r.header) : '—';

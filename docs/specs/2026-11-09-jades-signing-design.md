@@ -185,6 +185,11 @@ Checks, in order:
 `now` is injectable (defaults to the system clock) so test vectors with fixed `iat`
 values can be verified.
 
+`requireIat` (default `true`) can be turned off in the demo verifier ("חובה iat"
+checkbox). When off, an absent `iat` is accepted and check 6 is skipped. An `iat` that
+is present must still be an integer (`MISSING_IAT` otherwise) and is still checked
+against the time window.
+
 Not checked: certificate trust, certificate validity dates, revocation. *(My call:
 certificate validity dates fall under "trust", so they are out of scope for now.)*
 
