@@ -81,7 +81,23 @@
   // ================= SIGN =================
 
   const payloadStatus = $('payload-status');
+  // Live preview of the payload member: B64URL of exactly the bytes in the box. No key needed.
+  function updatePayloadPreview() {
+    if ($('payload-preview').hidden) return;
+    const bytes = Jades.utf8($('payload').value);
+    const b64 = Jades.b64urlEncode(bytes);
+    $('pp-value').textContent = b64 || '(ריק)';
+    $('pp-meta').textContent = `${bytes.length} בתים (UTF-8) ← ${b64.length} תווי Base64URL`;
+  }
+  $('btn-payload-preview').addEventListener('click', (e) => {
+    const box = $('payload-preview');
+    box.hidden = !box.hidden;
+    e.target.textContent = box.hidden ? 'הצגת payload' : 'הסתרת payload';
+    updatePayloadPreview();
+  });
+
   function checkPayload() {
+    updatePayloadPreview();
     try { JSON.parse($('payload').value); setStatus(payloadStatus, `JSON תקין · ${Jades.utf8($('payload').value).length} בתים`, 'ok'); return true; }
     catch (e) { setStatus(payloadStatus, 'JSON לא תקין: ' + e.message, 'bad'); return false; }
   }
@@ -282,6 +298,18 @@
     $('v-o-header').textContent = r.header ? pretty(r.header) : '—';
     $('v-o-payload').textContent = payloadView(r.payload);
     $('v-o-raw').textContent = r.payload ? `${r.payload.length} bytes:\n${Jades.fromUtf8(r.payload)}` : '—';
+
+    // The digest the signature is checked against: SHA-256 of the signing input, as received.
+    if (r.signingInput) {
+      const inputBytes = new TextEncoder().encode(r.signingInput);
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', inputBytes));
+      $('v-o-hash-hex').textContent = [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
+      $('v-o-hash-b64').textContent = Jades.b64Encode(hash);
+      $('v-o-input').textContent = r.signingInput;
+      $('v-o-input-len').textContent = `${inputBytes.length} בתים`;
+    } else {
+      for (const id of ['v-o-hash-hex', 'v-o-hash-b64', 'v-o-input', 'v-o-input-len']) $(id).textContent = '—';
+    }
 
     const dl = $('v-o-cert'); dl.textContent = '';
     const c = r.certificate;

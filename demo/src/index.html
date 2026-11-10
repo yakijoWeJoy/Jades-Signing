@@ -29,7 +29,13 @@
         <button id="btn-pretty" class="ghost">עיצוב JSON</button>
         <button id="btn-compact" class="ghost">דחיסת JSON</button>
         <label class="ghost file">טעינת קובץ JSON<input type="file" id="payload-file" accept=".json,application/json,text/plain"></label>
+        <button id="btn-payload-preview" class="ghost">הצגת payload</button>
         <span id="payload-status" class="status"></span>
+      </div>
+      <div id="payload-preview" hidden>
+        <h3><span class="f" dir="ltr">payload = B64URL(body bytes)</span></h3>
+        <p class="hint">זה הערך שנכנס לשדה <code>payload</code> בקובץ החתום, ועליו (יחד עם ה-protected header) מחושבת החתימה. מתעדכן עם כל שינוי בתיבה, בלי לחתום. <span id="pp-meta" dir="rtl"></span></p>
+        <pre id="pp-value" class="code wrap" dir="ltr"></pre>
       </div>
     </div>
 
@@ -137,6 +143,15 @@
     <div class="grid2">
       <div class="card"><h2>Protected header</h2><pre id="v-o-header" class="code" dir="ltr"></pre></div>
       <div class="card"><h2>Body / payload</h2><pre id="v-o-payload" class="code" dir="ltr"></pre><details class="raw"><summary>הבתים המקוריים (מה שנחתם בפועל)</summary><pre id="v-o-raw" class="code wrap" dir="ltr"></pre></details></div>
+    </div>
+    <div class="card">
+      <h2>ה-Hash שעליו נבדקת החתימה</h2>
+      <p class="hint"><span class="f" dir="ltr">SHA-256( ASCII(protected + "." + payload) )</span> – מחושב מהערכים בדיוק כפי שהתקבלו. החתימה נבדקת מול ה-Hash הזה עם המפתח הציבורי שבתעודה (בכל האלגוריתמים: PS256 / RS256 / ES256).</p>
+      <dl class="kv">
+        <dt>Hex</dt><dd id="v-o-hash-hex" dir="ltr"></dd>
+        <dt>Base64</dt><dd id="v-o-hash-b64" dir="ltr"></dd>
+      </dl>
+      <details class="raw"><summary>קלט החתימה (<span id="v-o-input-len"></span>)</summary><pre id="v-o-input" class="code wrap" dir="ltr"></pre></details>
     </div>
     <div class="card"><h2>תעודת החותם (<code>x5c[0]</code>)</h2><dl id="v-o-cert" class="kv"></dl></div>
   </div>
